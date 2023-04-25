@@ -59,6 +59,7 @@ lazy_static! {
     ]);
 }
 
+/// Represents a reference to a Bible passage via chapter and or more verses.
 #[derive(Debug)]
 pub enum Reference {
     BookChapter(BookId, u8),
@@ -197,6 +198,12 @@ where
         .collect::<Vec<_>>()
 }
 
+/// Represents a text containg Bible content.
+/// It can be
+/// - a critical edition of the Old Testament (like BHS, Biblia Hebraica Stuttgartensia)
+/// - a critical edition of the New Testament (like NA28, Nestle-Aland Novum Testamentum Graece 28)
+/// - a partial translation of the Bible (like Septuagint, which contains only the Old Testament in Greek).
+/// - a complete translation of the Bible (like LSB, Legacy Standard Bible, an English translation).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TextId {
     EnLSB,

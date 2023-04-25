@@ -1,8 +1,10 @@
 mod bible;
 
+use bible::TextId;
+
 fn main() {
-    let text = &bible::TextId::FiR1933_38;
-    let reference = bible::parse_reference_by_text("Joh. 1", text);
+    let text = &TextId::FiR1933_38;
+    let reference = bible::parse_reference_by_text("Joh. 1:15", text);
 
     if let Some(reference) = reference {
         println!(
@@ -14,6 +16,7 @@ fn main() {
                 None => String::new(),
             }
         );
+        println!("Reference: {}", reference.to_string(TextId::EnLSB));
     } else {
         eprintln!("Referenced given not found.");
     }
