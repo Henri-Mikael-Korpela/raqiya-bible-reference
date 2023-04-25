@@ -14,6 +14,7 @@ impl BookId {
     pub fn get_book_abbreviation_by_text(&self, text: TextId) -> Option<&'static str> {
         match text {
             TextId::EnLSB => BOOK_ABBREVIATIONS_FOR_EN_LSB.get(&self).copied(),
+            TextId::FiR1933_38 => BOOK_ABBREVIATIONS_FOR_FI_R1933_38.get(&self).copied(),
             _ => None,
         }
     }
@@ -22,6 +23,8 @@ impl BookId {
 lazy_static! {
     static ref BOOK_ABBREVIATIONS_FOR_EN_LSB: HashMap<BookId, &'static str> =
         HashMap::from([(BookId::Matthew, "Matthew"), (BookId::John, "John"),]);
+    static ref BOOK_ABBREVIATIONS_FOR_FI_R1933_38: HashMap<BookId, &'static str> =
+        HashMap::from([(BookId::Matthew, "Matt."), (BookId::John, "Joh.")]);
     static ref BOOK_ABBREVIATIONS_TO_IDS_EN: HashMap<&'static str, BookId> = HashMap::from([
         ("matt", BookId::Matthew),
         ("matthew", BookId::Matthew),
