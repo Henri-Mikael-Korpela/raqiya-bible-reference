@@ -4,6 +4,20 @@ extern crate lazy_static;
 
 use lazy_static::lazy_static;
 
+struct BookAbbreviation;
+impl BookAbbreviation {
+    pub fn get_by_book_id_and_text(bookId: &BookId, text: TextId) -> Option<&'static str> {
+        match text {
+            TextId::EnLSB => BOOK_ABBREVIATIONS_FOR_EN_LSB.get(bookId).copied(),
+            TextId::FiR1933_38 => BOOK_ABBREVIATIONS_FOR_FI_R1933_38.get(bookId).copied(),
+            _ => None,
+        }
+    }
+    pub fn sanitize(value: &str) -> String {
+        value.replace(".", "").to_lowercase()
+    }
+}
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 #[repr(u8)]
 enum BookId {
@@ -11,11 +25,13 @@ enum BookId {
     John,
 }
 impl BookId {
-    pub fn get_book_abbreviation_by_text(&self, text: TextId) -> Option<&'static str> {
+    pub fn find_by_sanitized_abbreviation<'a>(
+        text: &TextId,
+        abbreviation: &String,
+    ) -> Option<&'a BookId> {
         match text {
-            TextId::EnLSB => BOOK_ABBREVIATIONS_FOR_EN_LSB.get(&self).copied(),
-            TextId::FiR1933_38 => BOOK_ABBREVIATIONS_FOR_FI_R1933_38.get(&self).copied(),
-            _ => None,
+            TextId::EnLSB => BOOK_ABBREVIATIONS_TO_IDS_EN.get(abbreviation.as_str()),
+            TextId::FiR1933_38 => BOOK_ABBREVIATIONS_TO_IDS_FI.get(abbreviation.as_str()),
         }
     }
 }
@@ -46,23 +62,12 @@ impl Reference {
     pub fn to_string_by_text(&self, text: TextId) -> String {
         format!(
             "{} {}",
-            self.book_id
-                .get_book_abbreviation_by_text(text)
-                .unwrap_or("undefined"),
+            BookAbbreviation::get_by_book_id_and_text(&self.book_id, text).unwrap_or("undefined"),
             self.chapter
         )
     }
 }
 
-fn find_book_id_by_sanitized_abbreviation<'a>(
-    text: &TextId,
-    abbreviation: &String,
-) -> Option<&'a BookId> {
-    match text {
-        TextId::EnLSB => BOOK_ABBREVIATIONS_TO_IDS_EN.get(abbreviation.as_str()),
-        TextId::FiR1933_38 => BOOK_ABBREVIATIONS_TO_IDS_FI.get(abbreviation.as_str()),
-    }
-}
 fn parse_reference_by_text<S>(reference: S, text: &TextId) -> Option<Reference>
 where
     S: Into<String>,
@@ -71,9 +76,9 @@ where
     let parts = r.trim().split(" ").collect::<Vec<_>>();
     match parts.len() {
         2 => {
-            let part_as_sanitized_book_abbreviation = sanitize_as_book_abbreviation(parts[0]);
+            let part_as_sanitized_book_abbreviation = BookAbbreviation::sanitize(parts[0]);
             let Some(book_id) =
-                find_book_id_by_sanitized_abbreviation(text, &part_as_sanitized_book_abbreviation) else {
+                BookId::find_by_sanitized_abbreviation(text, &part_as_sanitized_book_abbreviation) else {
                     return None;
                 };
 
@@ -97,9 +102,6 @@ where
     s.split(";")
         .map(|part| parse_reference_by_text(part, text))
         .collect::<Vec<_>>()
-}
-fn sanitize_as_book_abbreviation(value: &str) -> String {
-    value.replace(".", "").to_lowercase()
 }
 
 fn main() {
