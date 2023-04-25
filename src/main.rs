@@ -60,12 +60,12 @@ fn find_book_id_by_sanitized_abbreviation<'a>(
         TextId::FiR1933_38 => BOOK_ABBREVIATIONS_TO_IDS_FI.get(abbreviation.as_str()),
     }
 }
-fn parse_by_text<'a, S>(text: &TextId, reference: S) -> Option<Vec<Reference>>
+fn parse_reference_by_text<S>(reference: S, text: &TextId) -> Option<Reference>
 where
     S: Into<String>,
 {
     let r: String = reference.into();
-    let parts = r.split(" ").collect::<Vec<_>>();
+    let parts = r.trim().split(" ").collect::<Vec<_>>();
     match parts.len() {
         2 => {
             let part_as_sanitized_book_abbreviation = sanitize_as_book_abbreviation(parts[0]);
@@ -78,13 +78,22 @@ where
                 return None;
             };
 
-            Some(vec![Reference {
+            Some(Reference {
                 book_id: book_id.clone(),
                 chapter,
-            }])
+            })
         }
         _ => None,
     }
+}
+fn parse_references_by_text<S>(reference: S, text: &TextId) -> Vec<Option<Reference>>
+where
+    S: Into<String>,
+{
+    let s: String = reference.into();
+    s.split(";")
+        .map(|part| parse_reference_by_text(part, text))
+        .collect::<Vec<_>>()
 }
 fn sanitize_as_book_abbreviation(value: &str) -> String {
     value.replace(".", "").to_lowercase()
@@ -102,22 +111,22 @@ enum TextId {
 
 #[cfg(test)]
 mod tests {
-    use crate::{parse_by_text, BookId, TextId};
+    use crate::{parse_reference_by_text, parse_references_by_text, BookId, TextId};
 
     #[test]
-    fn convert_reference_from_one_text_to_another() {
-        let reference = parse_by_text(&TextId::FiR1933_38, "Joh 1").unwrap();
-        let result = reference[0].to_string_by_text(TextId::EnLSB);
+    fn convert_valid_reference_from_one_text_to_another() {
+        let reference = parse_reference_by_text("Joh 1", &TextId::FiR1933_38).unwrap();
+        let result = reference.to_string_by_text(TextId::EnLSB);
         assert_eq!(result, "John 1");
     }
     #[test]
-    fn fail_parse_fi_1933_38_reference_with_book_and_chapter_when_reference_is_incorrect() {
+    fn fail_parse_reference_with_book_and_chapter_when_reference_is_incorrect() {
         let text = TextId::FiR1933_38;
 
         macro_rules! test_book_and_chapter {
             ($reference: literal) => {
-                let references = parse_by_text(&text, $reference);
-                assert!(references.is_none());
+                let reference = parse_reference_by_text($reference, &text);
+                assert!(reference.is_none());
             };
         }
 
@@ -127,15 +136,24 @@ mod tests {
         test_book_and_chapter!("Mat. 1");
     }
     #[test]
-    fn parse_fi_1933_38_reference_with_book_and_chapter_when_reference_is_correct() {
+    fn parse_multiple_references_when_references_are_correct() {
+        let references = parse_references_by_text("Matt 1; Joh. 1", &TextId::FiR1933_38);
+
+        assert_eq!(references[0].as_ref().unwrap().book_id, BookId::Matthew);
+        assert_eq!(references[0].as_ref().unwrap().chapter, 1);
+
+        assert_eq!(references[1].as_ref().unwrap().book_id, BookId::John);
+        assert_eq!(references[1].as_ref().unwrap().chapter, 1);
+    }
+    #[test]
+    fn parse_reference_with_book_and_chapter_when_reference_is_correct() {
         let text = TextId::FiR1933_38;
 
         macro_rules! test_book_and_chapter {
             ($reference: literal, $bookId: ident, $chapter:literal) => {
-                let references = parse_by_text(&text, $reference).unwrap();
-                assert_eq!(references.len(), 1);
-                assert_eq!(references[0].book_id, BookId::$bookId);
-                assert_eq!(references[0].chapter, $chapter);
+                let reference = parse_reference_by_text($reference, &text).unwrap();
+                assert_eq!(reference.book_id, BookId::$bookId);
+                assert_eq!(reference.chapter, $chapter);
             };
         }
 
