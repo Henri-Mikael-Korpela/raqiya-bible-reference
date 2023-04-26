@@ -20,4 +20,9 @@ fn main() {
     } else {
         eprintln!("Referenced given not found.");
     }
+
+    println!(
+        "{:?}",
+        bible::find_reference_matches_in("Test Joh 1 (Matt. 15:10)", &TextId::FiR1933_38)
+    );
 }

@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 extern crate lazy_static;
+extern crate regex;
 
 use lazy_static::lazy_static;
+use regex::Regex;
 
 type BookHashMap = HashMap<BookId, (&'static str, u8)>;
 
@@ -33,7 +35,7 @@ impl BookInfo {
         }
     }
     pub fn sanitize(value: &str) -> String {
-        value.replace(".", "").to_lowercase()
+        value.to_lowercase()
     }
 }
 
@@ -53,8 +55,10 @@ lazy_static! {
     ]);
     static ref BOOK_ABBREVIATIONS_TO_IDS_FI: HashMap<&'static str, BookId> = HashMap::from([
         ("matt", BookId::Matthew),
+        ("matt.", BookId::Matthew),
         ("matteus", BookId::Matthew),
         ("joh", BookId::John),
+        ("joh.", BookId::John),
         ("johannes", BookId::John),
     ]);
 }
@@ -78,7 +82,7 @@ impl Reference {
             TextId::FiR1933_38 => BOOK_INFO_FOR_FI_R1933_38.get(book_id),
         };
 
-        // Book info should always be found, thus unwrapping is performed here
+        // Book info should always be found. That is whu unwrapping is performed here
         book_info.unwrap().0
     }
     /// TODO: Optimize by avoiding match statement and just get data somewhere directly.
@@ -119,11 +123,46 @@ impl Reference {
     }
 }
 
-fn find_books_by_text(text: &TextId) -> &BookHashMap {
+#[derive(Debug)]
+pub struct ReferenceMatch<'a> {
+    pub content: &'a str,
+    pub position: usize,
+}
+
+fn find_book_info_by_text(text: &TextId) -> &BookHashMap {
     match text {
         TextId::EnLSB => &BOOK_INFO_FOR_EN_LSB,
         TextId::FiR1933_38 => &BOOK_INFO_FOR_FI_R1933_38,
     }
+}
+pub fn find_reference_matches_in<'a, S>(content: S, text: &TextId) -> Vec<ReferenceMatch<'a>>
+where
+    S: Into<&'a str>,
+{
+    let abbreviations = match text {
+        TextId::EnLSB => BOOK_ABBREVIATIONS_TO_IDS_EN.keys(),
+        TextId::FiR1933_38 => BOOK_ABBREVIATIONS_TO_IDS_FI.keys(),
+    };
+
+    let mut abbreviations_in_pattern = abbreviations.map(|a| *a).collect::<Vec<_>>().join("|");
+    let chapter_pattern = "\\s\\d{1,}";
+    let chapter_and_number_pattern = "\\s\\d{1,}:\\d{1,}";
+    abbreviations_in_pattern = format!(
+        "({})({}|{})",
+        abbreviations_in_pattern, chapter_and_number_pattern, chapter_pattern
+    );
+    let full_pattern = format!("(?i)({})", abbreviations_in_pattern);
+
+    let re = Regex::new(full_pattern.as_str()).unwrap();
+    re.captures_iter(content.into())
+        .map(|captures| {
+            let capture = captures.get(0).unwrap();
+            ReferenceMatch {
+                content: capture.as_str(),
+                position: capture.start(),
+            }
+        })
+        .collect::<Vec<_>>()
 }
 /// Parses a single reference from a string by a given text for the Bible.
 ///
@@ -145,7 +184,7 @@ where
                     return None;
                 };
 
-            let Some((_, chapter_count)) = find_books_by_text(text).get(book_id) else {
+            let Some((_, chapter_count)) = find_book_info_by_text(text).get(book_id) else {
                 return None;
             };
 
@@ -212,7 +251,10 @@ pub enum TextId {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_reference_by_text, parse_references_by_text, BookId, Reference, TextId};
+    use super::{
+        find_reference_matches_in, parse_reference_by_text, parse_references_by_text, BookId,
+        Reference, TextId,
+    };
 
     macro_rules! unwrap_enum_variant {
         ($value:expr, $pattern:pat => $extracted_value:expr) => {
@@ -255,6 +297,18 @@ mod tests {
         test_book_and_chapter!("Nothing");
         test_book_and_chapter!("Matt");
         test_book_and_chapter!("Mat. 1");
+    }
+    #[test]
+    fn find_references_in_str() {
+        let matches = find_reference_matches_in("Example Matt. 3 (Joh 12:24)", &TextId::FiR1933_38);
+
+        assert_eq!(matches.len(), 2);
+
+        assert_eq!(matches[0].content, "Matt. 3");
+        assert_eq!(matches[0].position, 8);
+
+        assert_eq!(matches[1].content, "Joh 12:24");
+        assert_eq!(matches[1].position, 17);
     }
     #[test]
     fn parse_multiple_references_with_book_and_chapter_when_references_are_correct() {
