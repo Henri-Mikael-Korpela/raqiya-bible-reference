@@ -146,14 +146,14 @@ where
         TextId::FiR1933_38 => BOOK_ABBREVIATIONS_TO_IDS_FI.keys(),
     };
 
-    let mut abbreviations_in_pattern = abbreviations.map(|a| *a).collect::<Vec<_>>().join("|");
+    let abbreviations_in_pattern = abbreviations.map(|a| *a).collect::<Vec<_>>().join("|");
     let chapter_pattern = "\\s\\d{1,}";
     let chapter_and_number_pattern = "\\s\\d{1,}:\\d{1,}";
-    abbreviations_in_pattern = format!(
+    let abbreviations_and_chapter_and_number_in_pattern = format!(
         "({})({}|{})",
         abbreviations_in_pattern, chapter_and_number_pattern, chapter_pattern
     );
-    let full_pattern = format!("(?i)({})", abbreviations_in_pattern);
+    let full_pattern = format!("(?i)({})", abbreviations_and_chapter_and_number_in_pattern);
 
     let re = Regex::new(full_pattern.as_str()).unwrap();
     re.captures_iter(content.into())
