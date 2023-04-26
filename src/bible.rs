@@ -135,6 +135,8 @@ fn find_book_info_by_text(text: &TextId) -> &BookHashMap {
         TextId::FiR1933_38 => &BOOK_INFO_FOR_FI_R1933_38,
     }
 }
+/// Finds all Bible passage references in a given value with their content and position.
+/// Only those book abbreviations included in a given text are supported.
 pub fn find_reference_matches_in<'a, S>(content: S, text: &TextId) -> Vec<ReferenceMatch<'a>>
 where
     S: Into<&'a str>,
