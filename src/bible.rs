@@ -277,7 +277,7 @@ where
 }
 /// Replaces all references found with a corresponding reference found according to a given text.
 ///
-/// In case a replacing reference for a reference could not be parsed, the original reference remains.
+/// In case a replacement reference for the original reference cannot be parsed, the original reference remains.
 pub fn replace_reference_matches_in<'a, S, Replacer>(
     content: S,
     text: &'a TextId,
