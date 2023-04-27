@@ -68,14 +68,15 @@ lazy_static! {
 pub enum Reference {
     BookChapter(BookId, u8),
     BookChapterNumber(BookId, u8, u8),
+    BookChapterNumberFromTo(BookId, u8, u8, u8),
 }
 impl Reference {
     /// TODO: Optimize by avoiding match statement and just get data somewhere directly.
-    #[inline]
     pub fn get_book_abbreviation(&self, text: &TextId) -> &'static str {
         let book_id = &match self {
             Self::BookChapter(book_id, _) => book_id.clone(),
             Self::BookChapterNumber(book_id, _, _) => book_id.clone(),
+            Self::BookChapterNumberFromTo(book_id, _, _, _) => book_id.clone(),
         };
         let book_info = match text {
             TextId::EnLSB => BOOK_INFO_FOR_EN_LSB.get(book_id),
@@ -91,6 +92,7 @@ impl Reference {
         match self {
             Self::BookChapter(_, chapter) => *chapter,
             Self::BookChapterNumber(_, chapter, _) => *chapter,
+            Self::BookChapterNumberFromTo(_, chapter, _, _) => *chapter,
         }
     }
     /// TODO: Optimize by avoiding match statement and just get data somewhere directly.
@@ -117,6 +119,13 @@ impl Reference {
                     format!("{} {}:{}", abbreviation, chapter, number)
                 } else {
                     format!("{} {}:{}", UNDEFINED, chapter, number)
+                }
+            }
+            Self::BookChapterNumberFromTo(book_id, chapter, number_from, number_to) => {
+                if let Some((abbreviation, _)) = BookInfo::get_by_book_id_and_text(book_id, text) {
+                    format!("{} {}:{}-{}", abbreviation, chapter, number_from, number_to)
+                } else {
+                    format!("{} {}:{}-{}", UNDEFINED, chapter, number_from, number_to)
                 }
             }
         }
@@ -190,7 +199,7 @@ where
                 return None;
             };
 
-            // Construct chapter or chapter and number, based on if there is a separator ':' between integers
+            // Construct chapter or chapter and number if there is a separator ':' between integers
             match parts[1].split(":").collect::<Vec<_>>()[..] {
                 [chapter] => {
                     let Ok(chapter_num) = chapter.parse::<u8>() else {
@@ -212,15 +221,36 @@ where
                         return None;
                     }
 
-                    let Ok(number_num) = number.parse::<u8>() else {
-                        return None;
-                    };
+                    // Construct number or number from and number to if there is a separator '-' between integers
+                    match number.split("-").collect::<Vec<_>>()[..] {
+                        [number_from, number_to] => {
+                            let Ok(number_from_num) = number_from.parse::<u8>() else {
+                                return None;
+                            };
+                            let Ok(number_to_num) = number_to.parse::<u8>() else {
+                                return None;
+                            };
 
-                    Some(Reference::BookChapterNumber(
-                        book_id.clone(),
-                        chapter_num,
-                        number_num,
-                    ))
+                            Some(Reference::BookChapterNumberFromTo(
+                                book_id.clone(),
+                                chapter_num,
+                                number_from_num,
+                                number_to_num,
+                            ))
+                        }
+                        [number] => {
+                            let Ok(number_num) = number.parse::<u8>() else {
+                                return None;
+                            };
+
+                            Some(Reference::BookChapterNumber(
+                                book_id.clone(),
+                                chapter_num,
+                                number_num,
+                            ))
+                        }
+                        _ => None,
+                    }
                 }
                 _ => None,
             }
@@ -228,7 +258,8 @@ where
         _ => None,
     }
 }
-/// The same as [parse_reference_by_text] except it parses and returns multiple references which are separated by a semicolon character (';').
+/// The same as [parse_reference_by_text] except it parses and
+/// returns multiple references which are separated by a semicolon character (';').
 pub fn parse_references_by_text<S>(reference: S, text: &TextId) -> Vec<Option<Reference>>
 where
     S: Into<String>,
@@ -361,7 +392,7 @@ mod tests {
         test_book_and_chapter!("Joh. 1", John, 1);
     }
     #[test]
-    fn parse_reference_with_book_and_chapter_and_verse_when_reference_is_correct() {
+    fn parse_reference_with_book_and_chapter_and_number_when_reference_is_correct() {
         let text = TextId::FiR1933_38;
 
         let reference = parse_reference_by_text("Joh 1:1", &text);
@@ -378,6 +409,29 @@ mod tests {
             assert_eq!(book_id, BookId::John);
             assert_eq!(chapter, 20);
             assert_eq!(number, 23);
+        });
+    }
+    #[test]
+    fn parse_reference_with_book_and_chapter_and_number_from_and_number_to_when_reference_is_correct(
+    ) {
+        let text = TextId::FiR1933_38;
+
+        let reference = parse_reference_by_text("Joh 1:3-8", &text);
+
+        unwrap_enum_variant!(reference.unwrap(), Reference::BookChapterNumberFromTo(book_id, chapter, number_from, number_to) => {
+            assert_eq!(book_id, BookId::John);
+            assert_eq!(chapter, 1);
+            assert_eq!(number_from, 3);
+            assert_eq!(number_to, 8);
+        });
+
+        let reference = parse_reference_by_text("Joh 20:15-27", &text);
+
+        unwrap_enum_variant!(reference.unwrap(), Reference::BookChapterNumberFromTo(book_id, chapter, number_from, number_to) => {
+            assert_eq!(book_id, BookId::John);
+            assert_eq!(chapter, 20);
+            assert_eq!(number_from, 15);
+            assert_eq!(number_to, 27);
         });
     }
 }
