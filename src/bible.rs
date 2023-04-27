@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 extern crate lazy_static;
 extern crate regex;
 
 use lazy_static::lazy_static;
-use regex::Regex;
+use regex::{Captures, Regex};
 
 type BookHashMap = HashMap<BookId, (&'static str, u8)>;
 
@@ -28,7 +28,7 @@ impl BookId {
 
 struct BookInfo;
 impl BookInfo {
-    fn get_by_book_id_and_text(book_id: &BookId, text: TextId) -> Option<(&'static str, u8)> {
+    fn get_by_book_id_and_text(book_id: &BookId, text: &TextId) -> Option<(&'static str, u8)> {
         match text {
             TextId::EnLSB => BOOK_INFO_FOR_EN_LSB.get(book_id).copied(),
             TextId::FiR1933_38 => BOOK_INFO_FOR_FI_R1933_38.get(book_id).copied(),
@@ -103,7 +103,7 @@ impl Reference {
             _ => None,
         }
     }
-    pub fn to_string(&self, text: TextId) -> String {
+    pub fn to_string(&self, text: &TextId) -> String {
         static UNDEFINED: &'static str = "undefined";
 
         match self {
@@ -150,21 +150,7 @@ pub fn find_reference_matches_in<'a, S>(content: S, text: &TextId) -> Vec<Refere
 where
     S: Into<&'a str>,
 {
-    let abbreviations = match text {
-        TextId::EnLSB => BOOK_ABBREVIATIONS_TO_IDS_EN.keys(),
-        TextId::FiR1933_38 => BOOK_ABBREVIATIONS_TO_IDS_FI.keys(),
-    };
-
-    let abbreviations_in_pattern = abbreviations.map(|a| *a).collect::<Vec<_>>().join("|");
-    let chapter_pattern = "\\s\\d{1,}";
-    let chapter_and_number_pattern = "\\s\\d{1,}:\\d{1,}";
-    let abbreviations_and_chapter_and_number_in_pattern = format!(
-        "({})({}|{})",
-        abbreviations_in_pattern, chapter_and_number_pattern, chapter_pattern
-    );
-    let full_pattern = format!("(?i)({})", abbreviations_and_chapter_and_number_in_pattern);
-
-    let re = Regex::new(full_pattern.as_str()).unwrap();
+    let re = make_reference_match_pattern(text);
     re.captures_iter(content.into())
         .map(|captures| {
             let capture = captures.get(0).unwrap();
@@ -174,6 +160,26 @@ where
             }
         })
         .collect::<Vec<_>>()
+}
+fn make_reference_match_pattern(text: &TextId) -> Regex {
+    let abbreviations = match text {
+        TextId::EnLSB => BOOK_ABBREVIATIONS_TO_IDS_EN.keys(),
+        TextId::FiR1933_38 => BOOK_ABBREVIATIONS_TO_IDS_FI.keys(),
+    };
+
+    let match_pattern = {
+        let abbreviations_in_pattern = abbreviations.map(|a| *a).collect::<Vec<_>>().join("|");
+        let chapter_pattern = "\\s\\d{1,}";
+        let chapter_and_number_pattern = "\\s\\d{1,}:\\d{1,}";
+        let abbreviations_and_chapter_and_number_in_pattern = format!(
+            "({})({}|{})",
+            abbreviations_in_pattern, chapter_and_number_pattern, chapter_pattern
+        );
+        format!("(?i)({})", abbreviations_and_chapter_and_number_in_pattern)
+    };
+
+    let re = Regex::new(match_pattern.as_str()).unwrap();
+    re
 }
 /// Parses a single reference from a string by a given text for the Bible.
 ///
@@ -223,6 +229,17 @@ where
 
                     // Construct number or number from and number to if there is a separator '-' between integers
                     match number.split("-").collect::<Vec<_>>()[..] {
+                        [number] => {
+                            let Ok(number_num) = number.parse::<u8>() else {
+                                return None;
+                            };
+
+                            Some(Reference::BookChapterNumber(
+                                book_id.clone(),
+                                chapter_num,
+                                number_num,
+                            ))
+                        }
                         [number_from, number_to] => {
                             let Ok(number_from_num) = number_from.parse::<u8>() else {
                                 return None;
@@ -236,17 +253,6 @@ where
                                 chapter_num,
                                 number_from_num,
                                 number_to_num,
-                            ))
-                        }
-                        [number] => {
-                            let Ok(number_num) = number.parse::<u8>() else {
-                                return None;
-                            };
-
-                            Some(Reference::BookChapterNumber(
-                                book_id.clone(),
-                                chapter_num,
-                                number_num,
                             ))
                         }
                         _ => None,
@@ -268,6 +274,30 @@ where
     s.split(";")
         .map(|part| parse_reference_by_text(part, text))
         .collect::<Vec<_>>()
+}
+/// Replaces all references found with a corresponding reference found according to a given text.
+///
+/// In case a replacing reference for a reference could not be parsed, the original reference remains.
+pub fn replace_reference_matches_in<'a, S, Replacer>(
+    content: S,
+    text: &'a TextId,
+    replacer: Replacer,
+) -> Cow<str>
+where
+    S: Into<&'a str>,
+    Replacer: Fn(&Reference) -> String,
+{
+    let re = make_reference_match_pattern(text);
+    let content_with_replacements =
+        re.replace_all(content.into(), |captures: &Captures| -> String {
+            let capture_content = captures.get(0).unwrap().as_str();
+            if let Some(reference) = parse_reference_by_text(capture_content, text) {
+                replacer(&reference)
+            } else {
+                capture_content.to_string()
+            }
+        });
+    content_with_replacements
 }
 
 /// Represents a text containg Bible content.
@@ -301,7 +331,7 @@ mod tests {
     #[test]
     fn convert_valid_reference_from_one_text_to_another() {
         let reference = parse_reference_by_text("Joh 1", &TextId::FiR1933_38).unwrap();
-        let result = reference.to_string(TextId::EnLSB);
+        let result = reference.to_string(&TextId::EnLSB);
         assert_eq!(result, "John 1");
     }
     #[test]
