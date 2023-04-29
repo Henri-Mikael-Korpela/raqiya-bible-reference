@@ -366,6 +366,18 @@ pub enum TextId {
     EnLSB,
     FiR1933_38,
 }
+impl TextId {
+    pub fn find_by_string(value: &String) -> Option<Self> {
+        let text_id = match value.as_str() {
+            "1933/-38" => TextId::FiR1933_38,
+            "LSB" => TextId::EnLSB,
+            _ => {
+                return None;
+            }
+        };
+        Some(text_id)
+    }
+}
 
 #[cfg(test)]
 mod tests {

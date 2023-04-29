@@ -3,6 +3,10 @@ name = "raqiya-bible-reference"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "raqiya_bible_reference_convert"
+path = "src/convert.rs"
+
 [dependencies]
 lazy_static = "1.4.0"
 regex = "1.8.1"
