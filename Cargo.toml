@@ -1,7 +1,13 @@
 [package]
 name = "raqiya-bible-reference"
-version = "0.1.0"
+authors = ["Raqiya"]
+description = "Parsing and conversion for Bible references"
 edition = "2021"
+keywords = ["bible", "conversion", "passage", "parsing", "reference"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/Henri-Mikael-Korpela/raqiya-bible-reference"
+version = "0.1.1"
 
 [lib]
 name = "raqiya_bible_reference"
