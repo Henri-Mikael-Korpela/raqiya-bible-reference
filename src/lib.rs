@@ -130,12 +130,9 @@ fn find_book_info_by_text(text: &TextId) -> &BookHashMap {
 }
 /// Finds all Bible passage references in a given value with their content and position.
 /// Only those book abbreviations included in a given text are supported.
-pub fn find_reference_matches_in<'a, S>(content: S, text: &TextId) -> Vec<ReferenceMatch<'a>>
-where
-    S: Into<&'a str>,
-{
+pub fn find_reference_matches_in<'a>(content: &'a str, text: &TextId) -> Vec<ReferenceMatch<'a>> {
     let re = make_reference_match_pattern(text);
-    re.captures_iter(content.into())
+    re.captures_iter(content)
         .map(|captures| {
             let capture = captures.get(0).unwrap();
             ReferenceMatch {
@@ -169,12 +166,9 @@ fn make_reference_match_pattern(text: &TextId) -> Regex {
 ///
 /// Parsing takes into consideration number of chapters found in a book.
 /// If the given chapter exceeds the number of chapters, parsing a reference fails.
-pub fn parse_reference_by_text<S>(reference: S, text: &TextId) -> Option<Reference>
-where
-    S: Into<String>,
-{
-    let r: String = reference.into();
-    let parts = r.trim().split(" ").collect::<Vec<_>>();
+pub fn parse_reference_by_text(reference: &str, text: &TextId) -> Option<Reference> {
+    let reference = reference.to_string();
+    let parts = reference.trim().split(" ").collect::<Vec<_>>();
     match parts.len() {
         2 => {
             // Construct book abbreviation
@@ -250,10 +244,7 @@ where
 }
 /// The same as [parse_reference_by_text] except it parses and
 /// returns multiple references which are separated by a semicolon character (';').
-pub fn parse_references_by_text<S>(reference: S, text: &TextId) -> Vec<Option<Reference>>
-where
-    S: Into<String>,
-{
+pub fn parse_references_by_text(reference: &str, text: &TextId) -> Vec<Option<Reference>> {
     let s: String = reference.into();
     s.split(";")
         .map(|part| parse_reference_by_text(part, text))
