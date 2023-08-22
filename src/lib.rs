@@ -1,6 +1,5 @@
 use std::{borrow::Cow, collections::HashMap};
 
-extern crate regex;
 use regex::{Captures, Regex};
 
 mod books;
