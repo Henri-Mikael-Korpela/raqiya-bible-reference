@@ -252,13 +252,12 @@ pub fn parse_references_by_text(reference: &str, text: &TextId) -> Vec<Option<Re
 /// Replaces all references found with a corresponding reference found according to a given text.
 ///
 /// In case a replacement reference for the original reference cannot be parsed, the original reference remains.
-pub fn replace_reference_matches_in<'a, S, Replacer>(
-    content: S,
+pub fn replace_reference_matches_in<'a, Replacer>(
+    content: &'a str,
     text: &'a TextId,
     replacer: Replacer,
-) -> Cow<str>
+) -> Cow<'a, str>
 where
-    S: Into<&'a str>,
     Replacer: Fn(&Reference) -> String,
 {
     let re = make_reference_match_pattern(text);
