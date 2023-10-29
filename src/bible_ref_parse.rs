@@ -1,5 +1,4 @@
-use raqiya_bible_reference::parse;
-use raqiya_bible_reference::Locale;
+use raqiya_bible_reference as bible_ref;
 
 fn main() {
     if let Err(err) = run() {
@@ -13,7 +12,8 @@ fn run() -> Result<(), String> {
         .skip(1)
         .next()
         .ok_or_else(|| "No Bible reference as command argument #1 given.")?;
-    let parse_result = parse(bible_ref).map_err(|err| err.to_string(Locale::English))?;
+    let parse_result = bible_ref::parse_reference(bible_ref)
+        .map_err(|err| err.to_string(bible_ref::Locale::En))?;
     println!("{:?}", parse_result);
     Ok(())
 }

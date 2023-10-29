@@ -1,9 +1,9 @@
 pub enum Locale {
-    English,
+    En,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ParseResult<'a> {
+pub enum ReferenceParseResult<'a> {
     Chapter {
         book_name: &'a str,
         chapter: u8,
@@ -21,24 +21,24 @@ pub enum ParseResult<'a> {
     },
 }
 #[derive(Debug, PartialEq)]
-pub enum ParseErrorCode {
+pub enum ReferenceParseErrorCode {
     BookNameNeverEnds,
     InvalidChapterFormat,
     InvalidRangeBetweenVerseNumbers,
     InvalidVerseNumberFormat,
     UnknownError,
 }
-impl ParseErrorCode {
+impl ReferenceParseErrorCode {
     pub fn to_string(&self, locale: Locale) -> &'static str {
         match locale {
-            Locale::English => match self {
-                ParseErrorCode::BookNameNeverEnds => "Book name never ends.",
-                ParseErrorCode::InvalidChapterFormat => "Invalid chapter format.",
-                ParseErrorCode::InvalidRangeBetweenVerseNumbers => {
+            Locale::En => match self {
+                ReferenceParseErrorCode::BookNameNeverEnds => "Book name never ends.",
+                ReferenceParseErrorCode::InvalidChapterFormat => "Invalid chapter format.",
+                ReferenceParseErrorCode::InvalidRangeBetweenVerseNumbers => {
                     "Invalid range between verse numbers."
                 }
-                ParseErrorCode::InvalidVerseNumberFormat => "Invalid verse number format.",
-                ParseErrorCode::UnknownError => "Unknown error.",
+                ReferenceParseErrorCode::InvalidVerseNumberFormat => "Invalid verse number format.",
+                ReferenceParseErrorCode::UnknownError => "Unknown error.",
             },
         }
     }
@@ -46,7 +46,8 @@ impl ParseErrorCode {
 
 const EMPTY_STRING: &str = "";
 
-pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
+/// Parses a Bible reference string into a parse result object.
+pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferenceParseErrorCode> {
     let mut book_name = EMPTY_STRING;
     let mut chapter = 0;
     let mut number = 0;
@@ -71,7 +72,7 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
                     value_chars.next();
                 }
             }
-            return Err(ParseErrorCode::BookNameNeverEnds);
+            return Err(ReferenceParseErrorCode::BookNameNeverEnds);
         } else if c.is_digit(10) {
             // If a (verse) number is found, then expect an end verse number to follow it.
             if number != 0 {
@@ -89,14 +90,14 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
                 let end_number_str = &value[i..i + end_number_str_end];
                 let end_number = end_number_str
                     .parse::<u8>()
-                    .map_err(|_| ParseErrorCode::InvalidVerseNumberFormat)?;
+                    .map_err(|_| ReferenceParseErrorCode::InvalidVerseNumberFormat)?;
 
                 // Ensure that the end verse number is greater than the start verse number.
                 if end_number < number {
-                    return Err(ParseErrorCode::InvalidRangeBetweenVerseNumbers);
+                    return Err(ReferenceParseErrorCode::InvalidRangeBetweenVerseNumbers);
                 }
 
-                return Ok(ParseResult::VerseFromTo {
+                return Ok(ReferenceParseResult::VerseFromTo {
                     book_name,
                     chapter,
                     number_from: number,
@@ -116,7 +117,7 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
                         let number_str = &value[i..i + number_str_end];
                         number = number_str
                             .parse::<u8>()
-                            .map_err(|_| ParseErrorCode::InvalidVerseNumberFormat)?;
+                            .map_err(|_| ReferenceParseErrorCode::InvalidVerseNumberFormat)?;
                         continue 'value_chars_loop;
                     } else {
                         break 'collect_number;
@@ -126,8 +127,8 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
                 let number_str = &value[i..i + number_str_end];
                 let number = number_str
                     .parse::<u8>()
-                    .map_err(|_| ParseErrorCode::InvalidChapterFormat)?;
-                return Ok(ParseResult::Verse {
+                    .map_err(|_| ReferenceParseErrorCode::InvalidChapterFormat)?;
+                return Ok(ReferenceParseResult::Verse {
                     book_name,
                     chapter,
                     number,
@@ -148,7 +149,7 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
                         let chapter_str = &value[i..i + chapter_str_end];
                         chapter = chapter_str
                             .parse::<u8>()
-                            .map_err(|_| ParseErrorCode::InvalidChapterFormat)?;
+                            .map_err(|_| ReferenceParseErrorCode::InvalidChapterFormat)?;
                         continue 'value_chars_loop;
                     } else {
                         break 'collect_chapter;
@@ -158,14 +159,14 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
                 let chapter_str = &value[i..i + chapter_str_end];
                 let chapter = chapter_str
                     .parse::<u8>()
-                    .map_err(|_| ParseErrorCode::InvalidChapterFormat)?;
+                    .map_err(|_| ReferenceParseErrorCode::InvalidChapterFormat)?;
 
-                return Ok(ParseResult::Chapter { book_name, chapter });
+                return Ok(ReferenceParseResult::Chapter { book_name, chapter });
             }
         }
     }
 
-    Err(ParseErrorCode::UnknownError)
+    Err(ReferenceParseErrorCode::UnknownError)
 }
 
 #[cfg(test)]
@@ -176,18 +177,18 @@ mod tests {
     fn fail_parse_reference_to_many_verses_with_invalid_range_between_verse_numbers() {
         // The end verse number is less than the start verse number,
         // which doesn't make sense and should fail.
-        let parse_result = parse("John 3:2-1");
+        let parse_result = parse_reference("John 3:2-1");
         assert_eq!(
             parse_result,
-            Err(ParseErrorCode::InvalidRangeBetweenVerseNumbers)
+            Err(ReferenceParseErrorCode::InvalidRangeBetweenVerseNumbers)
         );
     }
     #[test]
     fn parse_reference_to_chapter_with_one_word_book_name() {
-        let parse_result = parse("John 3").unwrap();
+        let parse_result = parse_reference("John 3").unwrap();
         assert_eq!(
             parse_result,
-            ParseResult::Chapter {
+            ReferenceParseResult::Chapter {
                 book_name: "John",
                 chapter: 3
             }
@@ -195,19 +196,19 @@ mod tests {
     }
     #[test]
     fn parse_reference_to_chapter_with_two_word_book_name() {
-        let parse_result = parse("1 John 3").unwrap();
+        let parse_result = parse_reference("1 John 3").unwrap();
         assert_eq!(
             parse_result,
-            ParseResult::Chapter {
+            ReferenceParseResult::Chapter {
                 book_name: "John",
                 chapter: 3
             }
         );
 
-        let parse_result = parse("1 John 15").unwrap();
+        let parse_result = parse_reference("1 John 15").unwrap();
         assert_eq!(
             parse_result,
-            ParseResult::Chapter {
+            ReferenceParseResult::Chapter {
                 book_name: "John",
                 chapter: 15
             }
@@ -215,20 +216,20 @@ mod tests {
     }
     #[test]
     fn parse_reference_to_one_verse() {
-        let parse_result = parse("John 3:1").unwrap();
+        let parse_result = parse_reference("John 3:1").unwrap();
         assert_eq!(
             parse_result,
-            ParseResult::Verse {
+            ReferenceParseResult::Verse {
                 book_name: "John",
                 chapter: 3,
                 number: 1
             }
         );
 
-        let parse_result = parse("John 3:16").unwrap();
+        let parse_result = parse_reference("John 3:16").unwrap();
         assert_eq!(
             parse_result,
-            ParseResult::Verse {
+            ReferenceParseResult::Verse {
                 book_name: "John",
                 chapter: 3,
                 number: 16
@@ -237,10 +238,10 @@ mod tests {
     }
     #[test]
     fn parse_reference_to_many_verses() {
-        let parse_result = parse("John 3:1-2").unwrap();
+        let parse_result = parse_reference("John 3:1-2").unwrap();
         assert_eq!(
             parse_result,
-            ParseResult::VerseFromTo {
+            ReferenceParseResult::VerseFromTo {
                 book_name: "John",
                 chapter: 3,
                 number_from: 1,
