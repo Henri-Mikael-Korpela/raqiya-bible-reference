@@ -24,6 +24,7 @@ pub enum ParseResult<'a> {
 pub enum ParseErrorCode {
     BookNameNeverEnds,
     InvalidChapterFormat,
+    InvalidRangeBetweenVerseNumbers,
     InvalidVerseNumberFormat,
     UnknownError,
 }
@@ -33,6 +34,9 @@ impl ParseErrorCode {
             Locale::English => match self {
                 ParseErrorCode::BookNameNeverEnds => "Book name never ends.",
                 ParseErrorCode::InvalidChapterFormat => "Invalid chapter format.",
+                ParseErrorCode::InvalidRangeBetweenVerseNumbers => {
+                    "Invalid range between verse numbers."
+                }
                 ParseErrorCode::InvalidVerseNumberFormat => "Invalid verse number format.",
                 ParseErrorCode::UnknownError => "Unknown error.",
             },
@@ -86,6 +90,12 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
                 let end_number = end_number_str
                     .parse::<u8>()
                     .map_err(|_| ParseErrorCode::InvalidVerseNumberFormat)?;
+
+                // Ensure that the end verse number is greater than the start verse number.
+                if end_number < number {
+                    return Err(ParseErrorCode::InvalidRangeBetweenVerseNumbers);
+                }
+
                 return Ok(ParseResult::VerseFromTo {
                     book_name,
                     chapter,
@@ -162,6 +172,16 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn fail_parse_reference_to_many_verses_with_invalid_range_between_verse_numbers() {
+        // The end verse number is less than the start verse number,
+        // which doesn't make sense and should fail.
+        let parse_result = parse("John 3:2-1");
+        assert_eq!(
+            parse_result,
+            Err(ParseErrorCode::InvalidRangeBetweenVerseNumbers)
+        );
+    }
     #[test]
     fn parse_reference_to_chapter_with_one_word_book_name() {
         let parse_result = parse("John 3").unwrap();
