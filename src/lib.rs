@@ -13,11 +13,18 @@ pub enum ParseResult<'a> {
         chapter: u8,
         number: u8,
     },
+    VerseFromTo {
+        book_name: &'a str,
+        chapter: u8,
+        number_from: u8,
+        number_to: u8,
+    },
 }
 #[derive(Debug, PartialEq)]
 pub enum ParseErrorCode {
     BookNameNeverEnds,
     InvalidChapterFormat,
+    InvalidVerseNumberFormat,
     UnknownError,
 }
 impl ParseErrorCode {
@@ -26,6 +33,7 @@ impl ParseErrorCode {
             Locale::English => match self {
                 ParseErrorCode::BookNameNeverEnds => "Book name never ends.",
                 ParseErrorCode::InvalidChapterFormat => "Invalid chapter format.",
+                ParseErrorCode::InvalidVerseNumberFormat => "Invalid verse number format.",
                 ParseErrorCode::UnknownError => "Unknown error.",
             },
         }
@@ -37,6 +45,7 @@ const EMPTY_STRING: &str = "";
 pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
     let mut book_name = EMPTY_STRING;
     let mut chapter = 0;
+    let mut number = 0;
     let mut value_chars = value.chars().enumerate().peekable();
 
     'value_chars_loop: while let Some((i, c)) = value_chars.next() {
@@ -60,14 +69,45 @@ pub fn parse(value: &str) -> Result<ParseResult, ParseErrorCode> {
             }
             return Err(ParseErrorCode::BookNameNeverEnds);
         } else if c.is_digit(10) {
+            // If a (verse) number is found, then expect an end verse number to follow it.
+            if number != 0 {
+                let mut end_number_str_end = 1;
+
+                'collect_number: while let Some((_, number_c)) = value_chars.peek() {
+                    if number_c.is_digit(10) {
+                        value_chars.next();
+                        end_number_str_end += 1;
+                    } else {
+                        break 'collect_number;
+                    }
+                }
+
+                let end_number_str = &value[i..i + end_number_str_end];
+                let end_number = end_number_str
+                    .parse::<u8>()
+                    .map_err(|_| ParseErrorCode::InvalidVerseNumberFormat)?;
+                return Ok(ParseResult::VerseFromTo {
+                    book_name,
+                    chapter,
+                    number_from: number,
+                    number_to: end_number,
+                });
+            }
             // If a chapter is already found, then expect a verse number to follow it.
-            if chapter != 0 {
+            else if chapter != 0 {
                 let mut number_str_end = 1;
 
                 'collect_number: while let Some((_, number_c)) = value_chars.peek() {
                     if number_c.is_digit(10) {
                         value_chars.next();
                         number_str_end += 1;
+                    } else if *number_c == '-' {
+                        value_chars.next();
+                        let number_str = &value[i..i + number_str_end];
+                        number = number_str
+                            .parse::<u8>()
+                            .map_err(|_| ParseErrorCode::InvalidVerseNumberFormat)?;
+                        continue 'value_chars_loop;
                     } else {
                         break 'collect_number;
                     }
@@ -123,7 +163,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_chapter_with_one_word_book_name() {
+    fn parse_reference_to_chapter_with_one_word_book_name() {
         let parse_result = parse("John 3").unwrap();
         assert_eq!(
             parse_result,
@@ -134,7 +174,7 @@ mod tests {
         );
     }
     #[test]
-    fn parse_chapter_with_two_word_book_name() {
+    fn parse_reference_to_chapter_with_two_word_book_name() {
         let parse_result = parse("1 John 3").unwrap();
         assert_eq!(
             parse_result,
@@ -154,7 +194,7 @@ mod tests {
         );
     }
     #[test]
-    fn parse_verse() {
+    fn parse_reference_to_one_verse() {
         let parse_result = parse("John 3:1").unwrap();
         assert_eq!(
             parse_result,
@@ -172,6 +212,19 @@ mod tests {
                 book_name: "John",
                 chapter: 3,
                 number: 16
+            }
+        );
+    }
+    #[test]
+    fn parse_reference_to_many_verses() {
+        let parse_result = parse("John 3:1-2").unwrap();
+        assert_eq!(
+            parse_result,
+            ParseResult::VerseFromTo {
+                book_name: "John",
+                chapter: 3,
+                number_from: 1,
+                number_to: 2
             }
         );
     }
