@@ -12,7 +12,7 @@ fn run() -> Result<(), String> {
         .skip(1)
         .next()
         .ok_or_else(|| "No Bible reference as command argument #1 given.")?;
-    let parse_result = bible_ref::parse_reference(bible_ref)
+    let parse_result = bible_ref::parse_references(bible_ref)
         .map_err(|err| err.to_string(bible_ref::Locale::En))?;
     println!("{:?}", parse_result);
     Ok(())

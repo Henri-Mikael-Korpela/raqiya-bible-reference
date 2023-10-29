@@ -168,6 +168,16 @@ pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferencePar
 
     Err(ReferenceParseErrorCode::UnknownError)
 }
+pub fn parse_references(value: &str) -> Result<Vec<ReferenceParseResult>, ReferenceParseErrorCode> {
+    let mut references = Vec::new();
+
+    for reference_str in value.split(';') {
+        let reference = parse_reference(reference_str)?;
+        references.push(reference);
+    }
+
+    Ok(references)
+}
 
 #[cfg(test)]
 mod tests {
@@ -247,6 +257,27 @@ mod tests {
                 number_from: 1,
                 number_to: 2
             }
+        );
+    }
+    #[test]
+    fn parse_references() {
+        let parse_result = super::parse_references("John 3:1-2; John 3:4-5").unwrap();
+        assert_eq!(
+            parse_result,
+            &[
+                ReferenceParseResult::VerseFromTo {
+                    book_name: "John",
+                    chapter: 3,
+                    number_from: 1,
+                    number_to: 2
+                },
+                ReferenceParseResult::VerseFromTo {
+                    book_name: "John",
+                    chapter: 3,
+                    number_from: 4,
+                    number_to: 5
+                }
+            ]
         );
     }
 }
