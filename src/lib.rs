@@ -13,6 +13,11 @@ pub enum ReferenceParseResult<'a> {
         chapter: u8,
         number: u8,
     },
+    VerseFromOnwards {
+        book_name: &'a str,
+        chapter: u8,
+        number_from: u8,
+    },
     VerseFromTo {
         book_name: &'a str,
         chapter: u8,
@@ -119,6 +124,16 @@ pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferencePar
                             .parse::<u8>()
                             .map_err(|_| ReferenceParseErrorCode::InvalidVerseNumberFormat)?;
                         continue 'value_chars_loop;
+                    } else if *number_c == '+' {
+                        let number_str = &value[i..i + number_str_end];
+                        let number_from = number_str
+                            .parse::<u8>()
+                            .map_err(|_| ReferenceParseErrorCode::InvalidVerseNumberFormat)?;
+                        return Ok(ReferenceParseResult::VerseFromOnwards {
+                            book_name,
+                            chapter,
+                            number_from,
+                        });
                     } else {
                         break 'collect_number;
                     }
@@ -243,6 +258,18 @@ mod tests {
                 book_name: "John",
                 chapter: 3,
                 number: 16
+            }
+        );
+    }
+    #[test]
+    fn parse_reference_to_one_verse_and_onwards() {
+        let parse_result = parse_reference("John 3:1+").unwrap();
+        assert_eq!(
+            parse_result,
+            ReferenceParseResult::VerseFromOnwards {
+                book_name: "John",
+                chapter: 3,
+                number_from: 1
             }
         );
     }
