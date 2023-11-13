@@ -10,15 +10,24 @@ fn main() {
     }
 }
 fn run() -> Result<(), String> {
-    let args = std::env::args();
-    let bible_ref = &args
-        .skip(1)
-        .next()
-        .ok_or_else(|| "No Bible reference as command argument #1 given.")?;
-    let parse_result = bible_ref::parse_references(bible_ref)
+    let mut args = std::env::args();
+    args.next();
+    let Some(text) = args.next() else {
+        return Err("No text as command argument #1 given.".into());
+    };
+    let Some(bible_ref) = args
+        .next() else {
+            return Err("No Bible reference as command argument #2 given.".into());
+        };
+    let parse_result = bible_ref::parse_references(&bible_ref)
         .map_err(|err| err.to_string(bible_ref::Locale::En))?;
 
-    let osis_source_path = env::current_dir().unwrap().join("assets/kjv.xml");
+    let osis_source_target = match text.as_str() {
+        "KJV" => "assets/kjv.xml",
+        "R1933/-38" => "assets/r1933-38.xml",
+        _ => return Err(format!("Unsupported text: {}", text)),
+    };
+    let osis_source_path = env::current_dir().unwrap().join(osis_source_target);
     let file = File::open(&osis_source_path).unwrap();
     let osis_source = OsisSource::from_file(file);
 
