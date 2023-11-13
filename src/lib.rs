@@ -3,7 +3,7 @@ use std::{
     io::{Cursor, Read},
 };
 
-use xml::reader::XmlEvent;
+use xml::{attribute::OwnedAttribute, reader::XmlEvent};
 
 pub enum Locale {
     En,
@@ -77,6 +77,57 @@ impl Source for OsisSource {
         let mut parser = xml::EventReader::new(file_reader);
 
         match parse_result.reference_type {
+            ReferenceParseResultType::Chapter => {
+                let mut reading_chapter = false;
+                let mut verse_references = Vec::<Reference>::new();
+                let mut verse_count = 0u8;
+
+                // XML element traversal operates in line with the following assumptions:
+                // - The XML content is valid.
+                // - Each <chapter> element has only <verse> elements as children in numerical order.
+                // - Each <verse> element has text content only.
+                while let Ok(element) = parser.next() {
+                    if let XmlEvent::StartElement {
+                        name, attributes, ..
+                    } = element
+                    {
+                        if name.local_name == "chapter"
+                            && attributes
+                                .iter()
+                                .find(|attribute| {
+                                    matches_xml_attribute(
+                                        attribute,
+                                        "osisID",
+                                        &format!(
+                                            "{}.{}",
+                                            parse_result.book_name, parse_result.chapter
+                                        ),
+                                    )
+                                })
+                                .is_some()
+                        {
+                            reading_chapter = true;
+                        } else if reading_chapter && name.local_name == "verse" {
+                            if let Ok(XmlEvent::Characters(content)) = parser.next() {
+                                verse_count += 1;
+                                verse_references.push(Reference {
+                                    chapter: parse_result.chapter,
+                                    number: verse_count,
+                                    content,
+                                });
+                            } else {
+                                return Err(String::from("Failed to parse verse content. Expected verse content to follow verse start element."));
+                            }
+                        }
+                    } else if let XmlEvent::EndElement { name } = element {
+                        if name.local_name == "chapter" && reading_chapter {
+                            break;
+                        }
+                    }
+                }
+
+                Ok(verse_references)
+            }
             ReferenceParseResultType::VerseFromTo {
                 number_from,
                 number_to,
@@ -102,9 +153,11 @@ impl Source for OsisSource {
                         if name.local_name == "verse" {
                             // Expect all verses to be in numerical order.
                             if let Some(_) = attributes.iter().find(|attribute| {
-                                attribute.name.local_name == "osisID"
-                                    && attribute.value
-                                        == verse_reference_ids[verse_references_handled_count]
+                                matches_xml_attribute(
+                                    attribute,
+                                    "osisID",
+                                    &verse_reference_ids[verse_references_handled_count],
+                                )
                             }) {
                                 if let Ok(XmlEvent::Characters(content)) = parser.next() {
                                     verse_references.push(Reference {
@@ -147,6 +200,9 @@ impl OsisSource {
 
 const EMPTY_STRING: &str = "";
 
+fn matches_xml_attribute(attribute: &&OwnedAttribute, name: &str, value: &str) -> bool {
+    attribute.name.local_name == name && attribute.value == value
+}
 /// Parses a Bible reference string into a parse result object.
 pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferenceParseErrorCode> {
     let mut book_name = EMPTY_STRING;
