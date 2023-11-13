@@ -73,6 +73,10 @@ pub struct OsisSource {
 }
 impl Source for OsisSource {
     fn find_content(&self, parse_result: &ReferenceParseResult) -> Result<Vec<Reference>, String> {
+        fn matches_xml_attribute(attribute: &&OwnedAttribute, name: &str, value: &str) -> bool {
+            attribute.name.local_name == name && attribute.value == value
+        }
+
         let file_reader = Cursor::new(&self.data);
         let mut parser = xml::EventReader::new(file_reader);
 
@@ -168,6 +172,59 @@ impl Source for OsisSource {
                 }
                 Ok(vec![])
             }
+            ReferenceParseResultType::VerseFromOnwards { number_from } => {
+                let verse_reference_ids = (number_from..=u8::MAX)
+                    .map(|n| format!("{}.{}.{}", parse_result.book_name, parse_result.chapter, n))
+                    .collect::<Vec<_>>();
+
+                let mut reading_verses = false;
+                let mut verse_references =
+                    Vec::<Reference>::with_capacity(verse_reference_ids.len());
+                let mut verse_references_handled_count = 0;
+
+                // XML element traversal operates in line with the following assumptions:
+                // - The XML content is valid.
+                // - Each <chapter> element has only <verse> elements as children in numerical order.
+                // - Each <verse> element has text content only.
+                while let Ok(element) = parser.next() {
+                    if let XmlEvent::StartElement {
+                        name, attributes, ..
+                    } = element
+                    {
+                        if name.local_name == "verse" {
+                            // Expect all verses to be in numerical order.
+                            if let Some(_) = attributes.iter().find(|attribute| {
+                                matches_xml_attribute(
+                                    attribute,
+                                    "osisID",
+                                    &verse_reference_ids[verse_references_handled_count],
+                                )
+                            }) {
+                                if let Ok(XmlEvent::Characters(content)) = parser.next() {
+                                    verse_references.push(Reference {
+                                        chapter: parse_result.chapter,
+                                        number: number_from + verse_references_handled_count as u8,
+                                        content,
+                                    });
+                                } else {
+                                    return Err(String::from("Failed to parse verse content. Expected verse content to follow verse start element."));
+                                }
+
+                                reading_verses = true;
+                                verse_references_handled_count += 1;
+                            }
+                        }
+                        // If still reading verses and encountered a start element that is not a verse
+                        else if reading_verses {
+                            break;
+                        }
+                    } else if let XmlEvent::EndDocument = element {
+                        break;
+                    }
+                }
+
+                Ok(verse_references)
+            }
             ReferenceParseResultType::VerseFromTo {
                 number_from,
                 number_to,
@@ -242,9 +299,6 @@ impl OsisSource {
 
 const EMPTY_STRING: &str = "";
 
-fn matches_xml_attribute(attribute: &&OwnedAttribute, name: &str, value: &str) -> bool {
-    attribute.name.local_name == name && attribute.value == value
-}
 /// Parses a Bible reference string into a parse result object.
 pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferenceParseErrorCode> {
     let mut book_name = EMPTY_STRING;
