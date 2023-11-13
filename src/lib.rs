@@ -65,7 +65,7 @@ pub trait Source {
     fn find_content(&self, parse_result: &ReferenceParseResult) -> Result<Vec<Reference>, String>;
 }
 /// Represents a source of Bible content according to Open Scripture Information Standard (OSIS).
-/// It is stored in a specific XML format.
+/// It is stored in an XML format.
 ///
 /// See https://en.wikipedia.org/wiki/Open_Scripture_Information_Standard for more information.
 pub struct OsisSource {
@@ -123,10 +123,50 @@ impl Source for OsisSource {
                         if name.local_name == "chapter" && reading_chapter {
                             break;
                         }
+                    } else if let XmlEvent::EndDocument = element {
+                        break;
                     }
                 }
 
                 Ok(verse_references)
+            }
+            ReferenceParseResultType::Verse { number } => {
+                // XML element traversal operates in line with the following assumptions:
+                // - The XML content is valid.
+                // - Each <chapter> element has only <verse> elements as children in numerical order.
+                // - Each <verse> element has text content only.
+                while let Ok(element) = parser.next() {
+                    if let XmlEvent::StartElement {
+                        name, attributes, ..
+                    } = element
+                    {
+                        if name.local_name == "verse" {
+                            if let Some(_) = attributes.iter().find(|attribute| {
+                                matches_xml_attribute(
+                                    attribute,
+                                    "osisID",
+                                    &format!(
+                                        "{}.{}.{}",
+                                        parse_result.book_name, parse_result.chapter, number
+                                    ),
+                                )
+                            }) {
+                                if let Ok(XmlEvent::Characters(content)) = parser.next() {
+                                    return Ok(vec![Reference {
+                                        chapter: parse_result.chapter,
+                                        number,
+                                        content,
+                                    }]);
+                                } else {
+                                    return Err(String::from("Failed to parse verse content. Expected verse content to follow verse start element."));
+                                }
+                            }
+                        }
+                    } else if let XmlEvent::EndDocument = element {
+                        break;
+                    }
+                }
+                Ok(vec![])
             }
             ReferenceParseResultType::VerseFromTo {
                 number_from,
@@ -181,6 +221,8 @@ impl Source for OsisSource {
                         else if reading_verses {
                             return Err(format!("Incorrect range: range has verses from {number_from} to {number_to}, but there are only verses up to {verse_references_handled_count} in the given chapter."));
                         }
+                    } else if let XmlEvent::EndDocument = element {
+                        break;
                     }
                 }
 
