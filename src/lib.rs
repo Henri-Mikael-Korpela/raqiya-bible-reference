@@ -37,6 +37,7 @@ pub enum ReferenceParseResultType {
 pub enum ReferenceParseErrorCode {
     BookNameNeverEnds,
     InvalidChapterFormat,
+    InvalidChapterValue,
     InvalidRangeBetweenVerseNumbers,
     InvalidVerseNumberFormat,
     UnknownError,
@@ -47,6 +48,9 @@ impl ReferenceParseErrorCode {
             Locale::En => match self {
                 ReferenceParseErrorCode::BookNameNeverEnds => "Book name never ends.",
                 ReferenceParseErrorCode::InvalidChapterFormat => "Invalid chapter format.",
+                ReferenceParseErrorCode::InvalidChapterValue => {
+                    "Invalid value for a chapter given."
+                }
                 ReferenceParseErrorCode::InvalidRangeBetweenVerseNumbers => {
                     "Invalid range between verse numbers."
                 }
@@ -258,9 +262,15 @@ pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferencePar
                         // and start the next iteration to expect to collect a verse number.
                         value_chars.next();
                         let chapter_str = &value[i..i + chapter_str_end];
+
                         chapter = chapter_str
                             .parse::<u8>()
                             .map_err(|_| ReferenceParseErrorCode::InvalidChapterFormat)?;
+
+                        if chapter == 0 {
+                            return Err(ReferenceParseErrorCode::InvalidChapterValue);
+                        }
+
                         continue 'value_chars_loop;
                     } else {
                         break 'collect_chapter;
