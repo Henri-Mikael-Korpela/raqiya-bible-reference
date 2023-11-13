@@ -18,3 +18,4 @@ name = "raqiya_bible_reference"
 path = "src/lib.rs"
 
 [dependencies]
+xml = "0.8.10"

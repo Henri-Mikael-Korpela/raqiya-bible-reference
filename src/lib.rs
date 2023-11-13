@@ -1,29 +1,34 @@
+use std::{fs::File, io::BufReader};
+
+use xml::reader::XmlEvent;
+
 pub enum Locale {
     En,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ReferenceParseResult<'a> {
-    Chapter {
-        book_name: &'a str,
-        chapter: u8,
-    },
-    Verse {
-        book_name: &'a str,
-        chapter: u8,
-        number: u8,
-    },
-    VerseFromOnwards {
-        book_name: &'a str,
-        chapter: u8,
-        number_from: u8,
-    },
-    VerseFromTo {
-        book_name: &'a str,
-        chapter: u8,
-        number_from: u8,
-        number_to: u8,
-    },
+pub struct Reference {
+    pub chapter: u8,
+    pub number: u8,
+    pub content: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ReferenceParseResult<'a> {
+    pub book_name: &'a str,
+    pub chapter: u8,
+    reference_type: ReferenceParseResultType,
+}
+#[derive(Debug, PartialEq)]
+pub enum ReferenceParseResultType {
+    /// Bible verse reference to a chapter.
+    Chapter,
+    /// Bible verse reference to a verse.
+    Verse { number: u8 },
+    /// Bible verse reference to a verse and all verses onwards in a chapter.
+    VerseFromOnwards { number_from: u8 },
+    /// Bible verse reference to a range of verses.
+    VerseFromTo { number_from: u8, number_to: u8 },
 }
 #[derive(Debug, PartialEq)]
 pub enum ReferenceParseErrorCode {
@@ -51,6 +56,61 @@ impl ReferenceParseErrorCode {
 
 const EMPTY_STRING: &str = "";
 
+pub fn find_content_in_source(
+    file_reader: &mut BufReader<File>,
+    parse_result: &ReferenceParseResult,
+) -> Result<Vec<Reference>, String> {
+    let mut parser = xml::EventReader::new(file_reader);
+
+    match parse_result.reference_type {
+        ReferenceParseResultType::VerseFromTo {
+            number_from,
+            number_to,
+        } => {
+            let verse_reference_ids = (number_from..=number_to)
+                .map(|n| format!("{}.{}.{}", parse_result.book_name, parse_result.chapter, n))
+                .collect::<Vec<_>>();
+
+            let mut verse_references = Vec::<Reference>::with_capacity(verse_reference_ids.len());
+            let mut verse_references_handled_count = 0;
+
+            while let Ok(element) = parser.next() {
+                if let XmlEvent::StartElement {
+                    name, attributes, ..
+                } = element
+                {
+                    if name.local_name == "verse" {
+                        // Expect all verses to be in numerical order.
+                        if let Some(_) = attributes.iter().find(|attribute| {
+                            attribute.name.local_name == "osisID"
+                                && attribute.value
+                                    == verse_reference_ids[verse_references_handled_count]
+                        }) {
+                            if let Ok(XmlEvent::Characters(content)) = parser.next() {
+                                verse_references.push(Reference {
+                                    chapter: parse_result.chapter,
+                                    number: number_from + verse_references_handled_count as u8,
+                                    content,
+                                });
+                            } else {
+                                return Err(String::from("Failed to parse verse content. Expected verse content to follow verse start element."));
+                            }
+
+                            verse_references_handled_count += 1;
+
+                            if verse_references_handled_count == verse_reference_ids.len() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(verse_references)
+        }
+        _ => Ok(vec![]),
+    }
+}
 /// Parses a Bible reference string into a parse result object.
 pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferenceParseErrorCode> {
     let mut book_name = EMPTY_STRING;
@@ -102,11 +162,13 @@ pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferencePar
                     return Err(ReferenceParseErrorCode::InvalidRangeBetweenVerseNumbers);
                 }
 
-                return Ok(ReferenceParseResult::VerseFromTo {
+                return Ok(ReferenceParseResult {
                     book_name,
                     chapter,
-                    number_from: number,
-                    number_to: end_number,
+                    reference_type: ReferenceParseResultType::VerseFromTo {
+                        number_from: number,
+                        number_to: end_number,
+                    },
                 });
             }
             // If a chapter is already found, then expect a verse number to follow it.
@@ -129,10 +191,12 @@ pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferencePar
                         let number_from = number_str
                             .parse::<u8>()
                             .map_err(|_| ReferenceParseErrorCode::InvalidVerseNumberFormat)?;
-                        return Ok(ReferenceParseResult::VerseFromOnwards {
+                        return Ok(ReferenceParseResult {
                             book_name,
                             chapter,
-                            number_from,
+                            reference_type: ReferenceParseResultType::VerseFromOnwards {
+                                number_from,
+                            },
                         });
                     } else {
                         break 'collect_number;
@@ -143,10 +207,10 @@ pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferencePar
                 let number = number_str
                     .parse::<u8>()
                     .map_err(|_| ReferenceParseErrorCode::InvalidChapterFormat)?;
-                return Ok(ReferenceParseResult::Verse {
+                return Ok(ReferenceParseResult {
                     book_name,
                     chapter,
-                    number,
+                    reference_type: ReferenceParseResultType::Verse { number },
                 });
             }
             // If a book name is already found, then expect a chapter number to follow it.
@@ -176,7 +240,11 @@ pub fn parse_reference(value: &str) -> Result<ReferenceParseResult, ReferencePar
                     .parse::<u8>()
                     .map_err(|_| ReferenceParseErrorCode::InvalidChapterFormat)?;
 
-                return Ok(ReferenceParseResult::Chapter { book_name, chapter });
+                return Ok(ReferenceParseResult {
+                    book_name,
+                    chapter,
+                    reference_type: ReferenceParseResultType::Chapter,
+                });
             }
         }
     }
@@ -196,7 +264,41 @@ pub fn parse_references(value: &str) -> Result<Vec<ReferenceParseResult>, Refere
 
 #[cfg(test)]
 mod tests {
+    use std::{env, fs::File};
+
     use super::*;
+
+    #[test]
+    fn find_content_in_source_kjv() {
+        let project_dir = env::current_dir().unwrap();
+        let xml_file_path = project_dir.join("assets/kjv.xml");
+        let file = File::open(xml_file_path).unwrap();
+        let mut file_reader = BufReader::new(file);
+
+        let parse_result = ReferenceParseResult {
+            book_name: "John",
+            chapter: 3,
+            reference_type: ReferenceParseResultType::VerseFromTo {
+                number_from: 1,
+                number_to: 2,
+            },
+        };
+
+        let content = find_content_in_source(&mut file_reader, &parse_result).unwrap();
+        assert_eq!(
+            content,
+            vec![Reference {
+                chapter: 3,
+                number: 1,
+                content: String::from("There was a man of the Pharisees, named Nicodemus, a ruler of the Jews:")
+            },
+            Reference {
+                chapter: 3,
+                number: 2,
+                content: String::from("The same came to Jesus by night, and said unto him, Rabbi, we know that thou art a teacher come from God: for no man can do these miracles that thou doest, except God be with him.")
+            }]
+        );
+    }
 
     #[test]
     fn fail_parse_reference_to_many_verses_with_invalid_range_between_verse_numbers() {
@@ -213,9 +315,10 @@ mod tests {
         let parse_result = parse_reference("John 3").unwrap();
         assert_eq!(
             parse_result,
-            ReferenceParseResult::Chapter {
+            ReferenceParseResult {
                 book_name: "John",
-                chapter: 3
+                chapter: 3,
+                reference_type: ReferenceParseResultType::Chapter
             }
         );
     }
@@ -224,18 +327,20 @@ mod tests {
         let parse_result = parse_reference("1 John 3").unwrap();
         assert_eq!(
             parse_result,
-            ReferenceParseResult::Chapter {
+            ReferenceParseResult {
                 book_name: "John",
-                chapter: 3
+                chapter: 3,
+                reference_type: ReferenceParseResultType::Chapter
             }
         );
 
         let parse_result = parse_reference("1 John 15").unwrap();
         assert_eq!(
             parse_result,
-            ReferenceParseResult::Chapter {
+            ReferenceParseResult {
                 book_name: "John",
-                chapter: 15
+                chapter: 15,
+                reference_type: ReferenceParseResultType::Chapter
             }
         );
     }
@@ -244,20 +349,20 @@ mod tests {
         let parse_result = parse_reference("John 3:1").unwrap();
         assert_eq!(
             parse_result,
-            ReferenceParseResult::Verse {
+            ReferenceParseResult {
                 book_name: "John",
                 chapter: 3,
-                number: 1
+                reference_type: ReferenceParseResultType::Verse { number: 1 }
             }
         );
 
         let parse_result = parse_reference("John 3:16").unwrap();
         assert_eq!(
             parse_result,
-            ReferenceParseResult::Verse {
+            ReferenceParseResult {
                 book_name: "John",
                 chapter: 3,
-                number: 16
+                reference_type: ReferenceParseResultType::Verse { number: 16 }
             }
         );
     }
@@ -266,23 +371,25 @@ mod tests {
         let parse_result = parse_reference("John 3:1+").unwrap();
         assert_eq!(
             parse_result,
-            ReferenceParseResult::VerseFromOnwards {
+            ReferenceParseResult {
                 book_name: "John",
                 chapter: 3,
-                number_from: 1
+                reference_type: ReferenceParseResultType::VerseFromOnwards { number_from: 1 }
             }
         );
     }
     #[test]
-    fn parse_reference_to_many_verses() {
+    fn parse_reference_to_many_verses_in_range() {
         let parse_result = parse_reference("John 3:1-2").unwrap();
         assert_eq!(
             parse_result,
-            ReferenceParseResult::VerseFromTo {
+            ReferenceParseResult {
                 book_name: "John",
                 chapter: 3,
-                number_from: 1,
-                number_to: 2
+                reference_type: ReferenceParseResultType::VerseFromTo {
+                    number_from: 1,
+                    number_to: 2
+                }
             }
         );
     }
@@ -292,17 +399,21 @@ mod tests {
         assert_eq!(
             parse_result,
             &[
-                ReferenceParseResult::VerseFromTo {
+                ReferenceParseResult {
                     book_name: "John",
                     chapter: 3,
-                    number_from: 1,
-                    number_to: 2
+                    reference_type: ReferenceParseResultType::VerseFromTo {
+                        number_from: 1,
+                        number_to: 2
+                    }
                 },
-                ReferenceParseResult::VerseFromTo {
+                ReferenceParseResult {
                     book_name: "John",
                     chapter: 3,
-                    number_from: 4,
-                    number_to: 5
+                    reference_type: ReferenceParseResultType::VerseFromTo {
+                        number_from: 4,
+                        number_to: 5
+                    }
                 }
             ]
         );
