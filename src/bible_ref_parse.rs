@@ -1,5 +1,6 @@
-use std::{env, fs::File, io::BufReader};
+use std::{env, fs::File};
 
+use bible_ref::{OsisSource, Source};
 use raqiya_bible_reference as bible_ref;
 
 fn main() {
@@ -17,13 +18,12 @@ fn run() -> Result<(), String> {
     let parse_result = bible_ref::parse_references(bible_ref)
         .map_err(|err| err.to_string(bible_ref::Locale::En))?;
 
-    let project_dir = env::current_dir().unwrap();
-    let xml_file_path = project_dir.join("assets/kjv.xml");
+    let osis_source_path = env::current_dir().unwrap().join("assets/kjv.xml");
+    let file = File::open(&osis_source_path).unwrap();
+    let osis_source = OsisSource::from_file(file);
 
     for parsed_reference in parse_result.iter() {
-        let file = File::open(&xml_file_path).unwrap();
-        let mut file_reader = BufReader::new(file);
-        let references = bible_ref::find_content_in_source(&mut file_reader, parsed_reference)?;
+        let references = osis_source.find_content(parsed_reference)?;
 
         for reference in references {
             println!(
